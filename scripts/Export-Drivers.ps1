@@ -1,6 +1,7 @@
 ﻿#Requires -Version 5.1
 # Шаг 1. Выгружает все установленные драйверы этого ноутбука в папку drivers.
 # Запускать на самом MSI GF63 Thin 9SCXR, пока на нём стоит рабочая Windows.
+param([switch]$Force)
 
 $ErrorActionPreference = 'Stop'
 
@@ -27,7 +28,7 @@ Write-Host "Видеокарты: $gpu"
 Write-Host "Память    : $ramGb ГБ"
 Write-Host ''
 
-if ($cs.Model -notmatch 'GF63') {
+if ($cs.Model -notmatch 'GF63' -and -not $Force) {
     Write-Warning 'Это не похоже на MSI GF63. Драйверы нужно выгружать именно с того ноутбука, на который будет ставиться Windows.'
     $answer = Read-Host 'Всё равно продолжить? (y/n)'
     if ($answer -ne 'y') { exit 1 }

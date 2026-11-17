@@ -7,7 +7,10 @@ param(
     [string]$UsbDrive,
     [string]$DriversPath,
     [string]$WorkDir,
-    [int]$Index = 0
+    [int]$Index = 0,
+    [switch]$NoSlim,       # не удалять лишние компоненты из образа
+    [switch]$NoPrompt,     # без подтверждения (для автоматических тестов)
+    [switch]$AllowNonUsb   # разрешить запись не на USB (только для автоматических тестов)
 )
 
 $ErrorActionPreference = 'Stop'
@@ -55,7 +58,7 @@ function Get-UsbVolume($letter) {
     $part = Get-Partition -DriveLetter $letter -ErrorAction SilentlyContinue
     if (-not $part) { return $null }
     $disk = Get-Disk -Number $part.DiskNumber
-    if ($disk.BusType -ne 'USB') { return $null }
+    if ($disk.BusType -ne 'USB' -and -not $AllowNonUsb) { return $null }
     [pscustomobject]@{ Letter = $letter; Disk = $disk; Volume = (Get-Volume -DriveLetter $letter) }
 }
 
@@ -78,7 +81,7 @@ if ($usb.Disk.Size -lt 7GB) { throw 'Флешка слишком маленьк�
 
 Write-Host ''
 Write-Warning ("ВСЕ ДАННЫЕ на флешке {0}: ({1}, {2:N0} ГБ) будут УДАЛЕНЫ." -f $UsbDrive, $usb.Disk.FriendlyName, ($usb.Disk.Size / 1GB))
-if ((Read-Host 'Чтобы продолжить, введите YES') -cne 'YES') { throw 'Отменено.' }
+if (-not $NoPrompt -and (Read-Host 'Чтобы продолжить, введите YES') -cne 'YES') { throw 'Отменено.' }
 
 # ---------- Распаковка ISO ----------
 Step 'Распаковываю ISO'
@@ -118,6 +121,11 @@ Write-Host "Редакция: $($chosen.ImageName)"
 if ($chosen.ImageName -notmatch 'LTSC') {
     Write-Warning 'Это не LTSC-редакция. Набор рассчитан на Windows 10 Enterprise LTSC 2021, на других возможны отличия.'
 }
+$detail = Get-WindowsImage -ImagePath $wim -Index $Index
+Write-Host "Версия: $($detail.Version), архитектура: $($detail.Architecture)"
+if ("$($detail.Version)" -notmatch '^10\.0\.19044') {
+    Write-Warning 'Это не сборка 19044 (LTSC 2021). Скрипт продолжит работу, но рассчитан на LTSC 2021.'
+}
 
 # ---------- Встраивание драйверов и набора ----------
 Step 'Встраиваю драйверы в install.wim (10-20 минут)'
@@ -130,6 +138,35 @@ try {
     } catch {
         Write-Warning "Часть драйверов не добавилась: $($_.Exception.Message)"
         Write-Warning 'Продолжаю: остальные драйверы добавлены, недостающие Windows поставит через Центр обновления.'
+    }
+
+    if (-not $NoSlim) {
+        Step 'Убираю из образа ненужные компоненты'
+        # Только то, что не нужно для игр. Медиа-кодеки, .NET, DirectX, Store-службы не трогаются.
+        $features = @(
+            'Internet-Explorer-Optional-amd64',   # Internet Explorer 11
+            'WorkFolders-Client',                 # рабочие папки (корпоративная функция)
+            'Printing-XPSServices-Features',      # печать в XPS
+            'SMB1Protocol',                       # устаревший небезопасный сетевой протокол
+            'MicrosoftWindowsPowerShellV2Root',   # старый PowerShell 2.0
+            'FaxServicesClientPackage'            # факсы
+        )
+        $present = @(Get-WindowsOptionalFeature -Path $mount | Where-Object State -eq 'Enabled' | ForEach-Object FeatureName)
+        foreach ($feature in $features) {
+            if ($present -notcontains $feature) { continue }
+            try {
+                Disable-WindowsOptionalFeature -Path $mount -FeatureName $feature | Out-Null
+                Write-Host "  отключено: $feature"
+            } catch { Write-Warning "  не удалось отключить ${feature}: $($_.Exception.Message)" }
+        }
+        $capPattern = '^(App\.StepsRecorder|App\.Support\.QuickAssist|Browser\.InternetExplorer|Hello\.Face|MathRecognizer|Print\.Fax\.Scan)'
+        $caps = @(Get-WindowsCapability -Path $mount | Where-Object { $_.State -eq 'Installed' -and $_.Name -match $capPattern })
+        foreach ($cap in $caps) {
+            try {
+                Remove-WindowsCapability -Path $mount -Name $cap.Name | Out-Null
+                Write-Host "  удалено: $($cap.Name)"
+            } catch { Write-Warning "  не удалось удалить $($cap.Name): $($_.Exception.Message)" }
+        }
     }
 
     Step 'Копирую набор оптимизации в C:\GF63'
@@ -146,6 +183,19 @@ try {
     } finally {
         [gc]::Collect()
         reg.exe unload 'HKLM\GF63SOFT' | Out-Null
+    }
+
+    Step 'Проверяю образ перед сохранением'
+    if (-not (Test-Path (Join-Path $kitTarget 'Optimize-Windows.ps1'))) { throw 'Набор оптимизации не попал в образ.' }
+    $inImage = @(Get-WindowsDriver -Path $mount)
+    Write-Host "  сторонних драйверов в образе: $($inImage.Count)"
+    $inImage | Group-Object ClassName | Sort-Object Count -Descending |
+        ForEach-Object { '    {0,-22} {1}' -f $_.Name, $_.Count } | Write-Host
+    if ($inImage.Count -eq 0) { throw 'В образ не добавлен ни один драйвер.' }
+    foreach ($class in 'Display', 'Net', 'MEDIA') {
+        if (-not ($inImage | Where-Object ClassName -eq $class)) {
+            Write-Warning "  в образе нет драйверов класса $class - после установки это устройство может не работать до обновления Windows."
+        }
     }
 
     Step 'Сохраняю install.wim'

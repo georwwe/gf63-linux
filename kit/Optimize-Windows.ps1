@@ -8,7 +8,8 @@
 param(
     [switch]$Extreme,
     [switch]$Undo,
-    [switch]$NoRestorePoint
+    [switch]$NoRestorePoint,
+    [switch]$NoPrompt
 )
 
 $ErrorActionPreference = 'Stop'
@@ -108,7 +109,7 @@ if ($Undo) {
     if ($Backup.Count -eq 0) {
         Write-Host 'Резервной копии нет - отменять нечего.'
         Stop-Transcript | Out-Null
-        Read-Host 'Нажмите Enter для выхода'
+        if (-not $NoPrompt) { Read-Host 'Нажмите Enter для выхода' }
         exit
     }
     Step 'Возвращаю исходные настройки'
@@ -142,7 +143,7 @@ if ($Undo) {
     Write-Host ''
     Write-Host 'Готово. Перезагрузите компьютер.' -ForegroundColor Green
     Stop-Transcript | Out-Null
-    Read-Host 'Нажмите Enter для выхода'
+    if (-not $NoPrompt) { Read-Host 'Нажмите Enter для выхода' }
     exit
 }
 
@@ -307,4 +308,4 @@ Write-Host '  Вернуть всё как было: C:\GF63\Undo.cmd'
 Write-Host ''
 Stop-Transcript | Out-Null
 
-if ((Read-Host 'Перезагрузить компьютер сейчас? (y/n)') -eq 'y') { Restart-Computer -Force }
+if (-not $NoPrompt -and (Read-Host 'Перезагрузить компьютер сейчас? (y/n)') -eq 'y') { Restart-Computer -Force }
