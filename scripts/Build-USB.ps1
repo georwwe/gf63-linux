@@ -107,8 +107,12 @@ if (-not (Test-Path $wim)) {
 # ---------- Выбор редакции ----------
 $images = @(Get-WindowsImage -ImagePath $wim)
 if ($Index -eq 0) {
+    # Редакции "N" идут без медиа-компонентов, для игр они не подходят - выбираем обычную
+    $regular = @($images | Where-Object { $_.ImageName -notmatch '\sN(\s|$)' })
     if ($images.Count -eq 1) {
         $Index = $images[0].ImageIndex
+    } elseif ($regular.Count -eq 1) {
+        $Index = $regular[0].ImageIndex
     } else {
         Write-Host 'В образе несколько редакций:'
         $images | ForEach-Object { '  {0}: {1}' -f $_.ImageIndex, $_.ImageName | Write-Host }
