@@ -132,7 +132,9 @@ Write-Host '  привязка к NVIDIA применится автоматич
 # ---------- 7. Фоновая донастройка Horizon ----------
 Step 'Донастройка Horizon'
 $watch = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Target\Horizon-Watch.ps1`""
-New-ItemProperty 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Name 'GF63Horizon' -Value $watch -PropertyType String -Force | Out-Null
+$runKey = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
+if (-not (Test-Path $runKey)) { New-Item $runKey -Force | Out-Null }   # в свежем профиле ветки может не быть
+New-ItemProperty $runKey -Name 'GF63Horizon' -Value $watch -PropertyType String -Force | Out-Null
 if (-not $NoPrompt) {
     Start-Process powershell.exe -WindowStyle Hidden -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$Target\Horizon-Watch.ps1`""
 }
