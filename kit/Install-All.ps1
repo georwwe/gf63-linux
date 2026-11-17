@@ -104,12 +104,23 @@ if (Test-Path $hzExe) {
     Ok 'уже установлен'
 } else {
     try {
-        $releases = Invoke-RestMethod 'https://api.github.com/repos/horizon-rust/horizon/releases?per_page=40' -Headers $headers
-        $asset = $releases | ForEach-Object { $_.assets } | Where-Object name -eq 'horizon-launcher-setup.exe' | Select-Object -First 1
-        if (-not $asset) { throw 'в выпусках проекта нет файла horizon-launcher-setup.exe' }
         $setupExe = Join-Path $env:TEMP 'horizon-launcher-setup.exe'
-        Invoke-WebRequest $asset.browser_download_url -OutFile $setupExe -Headers $headers -UseBasicParsing
-        if ((Get-Item $setupExe).Length -ne $asset.size) { throw 'файл скачался не полностью' }
+        $url = $null; $size = 0
+        try {
+            # Список выпусков проекта: берём самый свежий, в котором есть установщик
+            $apiHeaders = $headers.Clone()
+            if ($env:GITHUB_TOKEN) { $apiHeaders['Authorization'] = "Bearer $env:GITHUB_TOKEN" }
+            $releases = Invoke-RestMethod 'https://api.github.com/repos/horizon-rust/horizon/releases?per_page=40' -Headers $apiHeaders
+            $asset = $releases | ForEach-Object { $_.assets } | Where-Object name -eq 'horizon-launcher-setup.exe' | Select-Object -First 1
+            if ($asset) { $url = $asset.browser_download_url; $size = $asset.size }
+        } catch {
+            Write-Host "  список выпусков недоступен ($($_.Exception.Message)), пробую прямую ссылку"
+        }
+        # Запасной путь: GitHub иногда ограничивает число запросов к списку выпусков
+        if (-not $url) { $url = 'https://github.com/horizon-rust/horizon/releases/latest/download/horizon-launcher-setup.exe' }
+        Invoke-WebRequest $url -OutFile $setupExe -Headers $headers -UseBasicParsing
+        $length = (Get-Item $setupExe).Length
+        if (($size -and $length -ne $size) -or $length -lt 1MB) { throw 'файл скачался не полностью' }
         $p = Start-Process $setupExe -ArgumentList 'setup', '--quiet', '--desktop-shortcut' -Wait -PassThru
         if (-not (Test-Path $hzExe)) { throw "установщик завершился с кодом $($p.ExitCode), лаунчер не появился" }
         Ok 'установлен, ярлык на рабочем столе'

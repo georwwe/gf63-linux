@@ -16,6 +16,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Syntax, optimize, undo, check
         shell: powershell
+        env:
+          # Shared runner addresses hit GitHub's anonymous API limit; a real laptop does not
+          GITHUB_TOKEN: ${{ github.token }}
         run: .\tests\Test-Kit.ps1
 
   build:
