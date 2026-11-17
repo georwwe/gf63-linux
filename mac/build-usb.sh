@@ -162,8 +162,17 @@ wimlib-imagex update "$WORK/install.wim" "$INDEX" < "$WORK/update.txt"
 # ---------- Флешка ----------
 step "Форматирую флешку $DISK"
 diskutil eraseDisk MS-DOS GF63WIN MBR "/dev/$DISK"
-USB="/Volumes/GF63WIN"
-[ -d "$USB" ] || fail "Флешка не подключилась после форматирования."
+PART="${DISK}s1"
+usb_mount_point() { diskutil info "$PART" 2>/dev/null | sed -n 's/^ *Mount Point: *//p'; }
+USB="$(usb_mount_point)"
+if [ -z "$USB" ]; then
+    # Иногда macOS не подключает том сама - подключаем явно
+    diskutil mount "$PART" >/dev/null 2>&1 || true
+    sleep 2
+    USB="$(usb_mount_point)"
+fi
+[ -n "$USB" ] && [ -d "$USB" ] || fail "Флешка не подключилась после форматирования. Выньте её, вставьте снова и запустите скрипт ещё раз."
+echo "Флешка подключена: $USB"
 
 step "Записываю файлы установщика (5-15 минут)"
 rsync -r --exclude 'sources/install.wim' "$MNT/" "$USB/"
