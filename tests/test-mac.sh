@@ -39,11 +39,12 @@ check 'setup.exe present'      "[ -f '$USB/setup.exe' ]"
 check 'install.swm present'    "[ -f '$USB/sources/install.swm' ]"
 check 'No file over 4 GB'      "[ -z \"\$(find '$USB' -type f -size +4095M)\" ]"
 ls -lh "$USB/sources/" | grep -i 'install'
-LIST="$(wimlib-imagex dir "$USB/sources/install.swm" 1 --ref="$USB/sources/install*.swm")"
-check 'Kit inside image'            "echo \"\$LIST\" | grep -q '^/GF63/Optimize-Windows.ps1'"
-check 'Slim marker inside image'    "echo \"\$LIST\" | grep -q '^/GF63/slim-pending'"
-check 'Drivers inside image'        "echo \"\$LIST\" | grep -q '^/GF63/drivers/drivers/wifi/test.inf'"
-check 'SetupComplete inside image'  "echo \"\$LIST\" | grep -qi '^/Windows/Setup/Scripts/SetupComplete.cmd'"
+# Listing goes to a file: piping it into "grep -q" trips pipefail when grep exits early
+wimlib-imagex dir "$USB/sources/install.swm" 1 --ref="$USB/sources/install*.swm" > "$TMP/list.txt"
+check 'Kit inside image'            "grep -q '^/GF63/Optimize-Windows.ps1' '$TMP/list.txt'"
+check 'Slim marker inside image'    "grep -q '^/GF63/slim-pending' '$TMP/list.txt'"
+check 'Drivers inside image'        "grep -q '^/GF63/drivers/drivers/wifi/test.inf' '$TMP/list.txt'"
+check 'SetupComplete inside image'  "grep -qi '^/Windows/Setup/Scripts/SetupComplete.cmd' '$TMP/list.txt'"
 wimlib-imagex extract "$USB/sources/install.swm" 1 /Windows/Setup/Scripts/SetupComplete.cmd \
     --ref="$USB/sources/install*.swm" --dest-dir="$TMP/out" >/dev/null
 check 'SetupComplete has CRLF'      "grep -q \$'\\r' '$TMP/out/SetupComplete.cmd'"
