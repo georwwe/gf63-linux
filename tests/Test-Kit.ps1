@@ -92,17 +92,41 @@ $code = Run (Join-Path $kit 'Setup-Minecraft.ps1') @()
 Check 'Setup-Minecraft exit code' ($code -eq 0) "code=$code"
 Check 'GPU preference written' ((Read-Reg 'HKCU:\SOFTWARE\Microsoft\DirectX\UserGpuPreferences' $fakeJava) -eq 'GpuPreference=2;')
 
-# --- 5a. Horizon setup: shader packs are really downloaded and hash-checked ---
-$horizonDir = Join-Path $env:RUNNER_TEMP 'horizon-game'
-New-Item $horizonDir -ItemType Directory -Force | Out-Null
-$code = Run (Join-Path $kit 'Setup-Horizon.ps1') @('-GameDir', $horizonDir, '-NoPrompt')
-Check 'Setup-Horizon exit code' ($code -eq 0) "code=$code"
-$zips = @(Get-ChildItem (Join-Path $horizonDir 'shaderpacks') -File -ErrorAction SilentlyContinue)
+# --- 5a. Install-All: real installs of the Minecraft and Horizon launchers --
+# (the NVIDIA step is skipped: the runner has no NVIDIA GPU)
+$stage = Join-Path $env:RUNNER_TEMP 'stick\GF63-SETUP'
+New-Item $stage -ItemType Directory -Force | Out-Null
+Copy-Item (Join-Path $kit '*') $stage -Recurse -Force
+$code = Run (Join-Path $stage 'Install-All.ps1') @('-SkipNvidia', '-NoPrompt')
+Check 'Install-All exit code' ($code -eq 0) "code=$code"
+Check 'Kit copied to C:\GF63' (Test-Path 'C:\GF63\Horizon-Watch.ps1')
+Check 'Minecraft launcher installed' (Test-Path (Join-Path ${env:ProgramFiles(x86)} 'Minecraft Launcher\MinecraftLauncher.exe'))
+Check 'Horizon launcher installed' (Test-Path (Join-Path $env:LOCALAPPDATA 'Programs\Horizon Launcher\horizon-launcher.exe'))
+$zips = @(Get-ChildItem 'C:\GF63\shaderpacks' -File -ErrorAction SilentlyContinue)
 $zips | ForEach-Object { Write-Host ("  {0}  {1:N0} KB" -f $_.Name, ($_.Length / 1KB)) }
 Check 'All four shader packs downloaded' ($zips.Count -eq 4) "count=$($zips.Count)"
-foreach ($word in 'Complementary', 'Mellow', 'MakeUp') {
-    Check "Pack present: $word" ([bool]($zips | Where-Object Name -match $word))
-}
+$runKey = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
+Check 'Watcher registered for logon' ((Read-Reg $runKey 'GF63Horizon') -match 'Horizon-Watch')
+
+# --- 5a2. Watcher: nothing to do before the game has run, then configures it --
+$code = Run 'C:\GF63\Horizon-Watch.ps1' @('-Once')
+Check 'Watcher waits while there is no game folder' ($code -eq 2) "code=$code"
+$game = Join-Path $env:APPDATA 'horizon-ci\game'
+New-Item $game -ItemType Directory -Force | Out-Null
+Set-Content (Join-Path $game 'options.txt') 'renderDistance:12'
+[IO.File]::WriteAllLines((Join-Path $game 'horizon-graphics.txt'), [string[]]@('preset:balanced', 'taa:false', 'caveCulling:true'))
+$code = Run 'C:\GF63\Horizon-Watch.ps1' @('-Once')
+Check 'Watcher configures the game' ($code -eq 0) "code=$code"
+Check 'Packs copied into the game' (@(Get-ChildItem (Join-Path $game 'shaderpacks') -File).Count -eq 4)
+$gfx = Get-Content (Join-Path $game 'horizon-graphics.txt')
+$gfx | ForEach-Object { Write-Host "  $_" }
+Check 'Existing settings kept' ($gfx -contains 'preset:balanced' -and $gfx -contains 'caveCulling:true')
+Check 'TAA replaced, not duplicated' (@($gfx | Where-Object { $_ -like 'taa:*' }).Count -eq 1 -and $gfx -contains 'taa:true')
+Check 'Dynamic resolution on' ($gfx -contains 'dynamicResolution:true' -and $gfx -contains 'targetFps:60')
+Check 'Shader pack picked' ([bool]($gfx | Where-Object { $_ -match '^pickedShaderPack:.*Complementary' }))
+$bytes = [IO.File]::ReadAllBytes((Join-Path $game 'horizon-graphics.txt'))
+Check 'Settings file has no BOM' ($bytes[0] -ne 0xEF)
+Check 'Watcher removed itself' ((Read-Reg $runKey 'GF63Horizon') -eq '<none>')
 
 # --- 5b. SetupComplete (first-boot script used by the macOS build) -----------
 New-Item 'C:\GF63' -ItemType Directory -Force | Out-Null

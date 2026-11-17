@@ -48,4 +48,13 @@ check 'SetupComplete inside image'  "grep -qi '^/Windows/Setup/Scripts/SetupComp
 wimlib-imagex extract "$USB/sources/install.swm" 1 /Windows/Setup/Scripts/SetupComplete.cmd \
     --ref="$USB/sources/install*.swm" --dest-dir="$TMP/out" >/dev/null
 check 'SetupComplete has CRLF'      "grep -q \$'\\r' '$TMP/out/SetupComplete.cmd'"
+# --- add-setup-to-stick.sh: the one-command "put everything on the stick" step ---
+mkdir -p "$TMP/dl"
+printf 'MZfake' > "$TMP/dl/621.24-desktop-win10-win11-64bit-international-dch-whql.exe"
+GF63_DOWNLOADS="$TMP/dl" GF63_NO_EJECT=1 bash "$ROOT/mac/add-setup-to-stick.sh" "$USB"
+check 'START.cmd on stick'          "[ -f '$USB/START.cmd' ]"
+check 'START.cmd has CRLF'          "grep -q \$'\\r' '$USB/START.cmd'"
+check 'Install-All on stick'        "[ -f '$USB/GF63-SETUP/Install-All.ps1' ]"
+check 'NVIDIA driver on stick'      "[ -f '$USB/621.24-desktop-win10-win11-64bit-international-dch-whql.exe' ]"
+check 'Windows installer untouched' "[ -f '$USB/sources/boot.wim' ]"
 [ "$fail" = 0 ] && echo 'All checks passed' || { echo 'Some checks FAILED'; exit 1; }
