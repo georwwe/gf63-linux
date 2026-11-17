@@ -25,12 +25,14 @@ echo "Fake USB: $DISK"
 GF63_ALLOW_ANY_DISK=1 GF63_NO_PROMPT=1 bash "$ROOT/mac/build-usb.sh" "$TMP/ltsc.iso" "$DISK" "$TMP/drivers"
 
 # The script ejects the disk; attach the image again and look inside
-hdiutil attach "$TMP/usb.dmg" >/dev/null
-USB=/Volumes/GF63WIN
+DEV="$(hdiutil attach "$TMP/usb.dmg" -nomount | awk 'NR==1 {print $1}')"
+USB="$TMP/usbmnt"
+mkdir -p "$USB"
+sudo mount_msdos -u "$(id -u)" -g "$(id -g)" "${DEV}s1" "$USB"
 fail=0
 check() { if eval "$2"; then echo "PASS  $1"; else echo "FAIL  $1"; fail=1; fi; }
-diskutil info "$USB" | grep -E 'File System Personality|Partition Type' || true
-check 'Volume is FAT32'        "diskutil info '$USB' | grep -q 'MS-DOS FAT32'"
+diskutil info "${DEV}s1" | grep -E 'File System Personality|Partition Type' || true
+check 'Volume is FAT32'        "diskutil info '${DEV}s1' | grep -q 'MS-DOS FAT32'"
 check 'UEFI loader present'    "[ -f '$USB/efi/boot/bootx64.efi' ]"
 check 'boot.wim present'       "[ -f '$USB/sources/boot.wim' ]"
 check 'setup.exe present'      "[ -f '$USB/setup.exe' ]"

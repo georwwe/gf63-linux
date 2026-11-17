@@ -167,9 +167,15 @@ usb_mount_point() { diskutil info "$PART" 2>/dev/null | sed -n 's/^ *Mount Point
 USB="$(usb_mount_point)"
 if [ -z "$USB" ]; then
     # Иногда macOS не подключает том сама - подключаем явно
-    diskutil mount "$PART" >/dev/null 2>&1 || true
+    diskutil mount "$PART" || true
     sleep 2
     USB="$(usb_mount_point)"
+fi
+if [ -z "$USB" ]; then
+    # Запасной способ: подключаем том напрямую (может спросить пароль от Mac)
+    MANUAL="$WORK/usb"
+    mkdir -p "$MANUAL"
+    if sudo mount_msdos -u "$(id -u)" -g "$(id -g)" "/dev/$PART" "$MANUAL"; then USB="$MANUAL"; fi
 fi
 [ -n "$USB" ] && [ -d "$USB" ] || fail "Флешка не подключилась после форматирования. Выньте её, вставьте снова и запустите скрипт ещё раз."
 echo "Флешка подключена: $USB"
@@ -188,6 +194,7 @@ wimlib-imagex dir "$USB/sources/install.swm" "$INDEX" --ref="$USB/sources/instal
     | grep -q 'Optimize-Windows.ps1' || fail "Набор оптимизации не попал в образ."
 dot_clean -m "$USB" 2>/dev/null || true
 sync
+if [ "$USB" = "$WORK/usb" ]; then sudo umount "$USB" || true; fi
 diskutil eject "/dev/$DISK" >/dev/null 2>&1 || true
 
 cat <<'DONE'
