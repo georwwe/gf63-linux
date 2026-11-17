@@ -165,6 +165,36 @@ if (-not $NoRestorePoint) {
     }
 }
 
+# ---------- Удаление лишних компонентов (если образ собирался на macOS) ----------
+# Сборка в Windows вырезает их из образа заранее; сборка на Mac оставляет метку,
+# и тогда они удаляются здесь, один раз.
+$slimMarker = Join-Path $PSScriptRoot 'slim-pending'
+if (Test-Path $slimMarker) {
+    Step 'Удаляю ненужные компоненты Windows (несколько минут)'
+    $features = 'Internet-Explorer-Optional-amd64', 'WorkFolders-Client', 'Printing-XPSServices-Features',
+                'SMB1Protocol', 'MicrosoftWindowsPowerShellV2Root', 'FaxServicesClientPackage'
+    foreach ($feature in $features) {
+        try {
+            $state = Get-WindowsOptionalFeature -Online -FeatureName $feature
+            if ($state -and $state.State -eq 'Enabled') {
+                Disable-WindowsOptionalFeature -Online -FeatureName $feature -NoRestart -WarningAction SilentlyContinue | Out-Null
+                Write-Host "  отключено: $feature"
+            }
+        } catch { Write-Warning "  не удалось отключить ${feature}: $($_.Exception.Message)" }
+    }
+    $capPattern = '^(App\.StepsRecorder|App\.Support\.QuickAssist|Browser\.InternetExplorer|Hello\.Face|MathRecognizer|Print\.Fax\.Scan)'
+    try {
+        $caps = @(Get-WindowsCapability -Online | Where-Object { $_.State -eq 'Installed' -and $_.Name -match $capPattern })
+        foreach ($cap in $caps) {
+            try {
+                Remove-WindowsCapability -Online -Name $cap.Name | Out-Null
+                Write-Host "  удалено: $($cap.Name)"
+            } catch { Write-Warning "  не удалось удалить $($cap.Name): $($_.Exception.Message)" }
+        }
+    } catch { Write-Warning "  список компонентов получить не удалось: $($_.Exception.Message)" }
+    Remove-Item $slimMarker -Force
+}
+
 # ---------- Электропитание ----------
 Step 'Электропитание: максимальная производительность'
 if (-not $Backup.Contains('power')) {

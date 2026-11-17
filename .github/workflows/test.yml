@@ -27,3 +27,12 @@ jobs:
       - name: Build image onto a virtual disk
         shell: powershell
         run: .\tests\Test-Build.ps1
+
+  mac:
+    name: Build USB on macOS
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build onto a disk image
+        run: bash tests/test-mac.sh

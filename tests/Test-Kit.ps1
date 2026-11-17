@@ -53,7 +53,9 @@ $svcBefore = @{}
 foreach ($n in $svcNames) { $s = Get-Service $n -ErrorAction SilentlyContinue; if ($s) { $svcBefore[$n] = "$($s.StartType)" } }
 Write-Host "Services present: $($svcBefore.Keys -join ', ')"
 
+Set-Content (Join-Path $kit 'slim-pending') ''   # exercise the online component removal as well
 $code = Run (Join-Path $kit 'Optimize-Windows.ps1') @('-NoPrompt', '-NoRestorePoint')
+Check 'Online slimming finished' (-not (Test-Path (Join-Path $kit 'slim-pending')))
 Check 'Optimize exit code' ($code -eq 0) "code=$code"
 foreach ($w in $watch) {
     $actual = Read-Reg $w[0] $w[1]
@@ -89,6 +91,14 @@ Set-Content $fakeJava 'x'
 $code = Run (Join-Path $kit 'Setup-Minecraft.ps1') @()
 Check 'Setup-Minecraft exit code' ($code -eq 0) "code=$code"
 Check 'GPU preference written' ((Read-Reg 'HKCU:\SOFTWARE\Microsoft\DirectX\UserGpuPreferences' $fakeJava) -eq 'GpuPreference=2;')
+
+# --- 5b. SetupComplete (first-boot script used by the macOS build) -----------
+New-Item 'C:\GF63' -ItemType Directory -Force | Out-Null
+& cmd.exe /c (Join-Path $root 'mac\SetupComplete.cmd')
+Check 'SetupComplete exit code' ($LASTEXITCODE -eq 0) "code=$LASTEXITCODE"
+$runOnce = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce'
+Check 'SetupComplete registers autorun' ((Read-Reg $runOnce 'GF63Optimize') -eq 'C:\GF63\Optimize.cmd') (Read-Reg $runOnce 'GF63Optimize')
+Remove-ItemProperty $runOnce -Name 'GF63Optimize' -ErrorAction SilentlyContinue
 
 # --- 6. Undo ----------------------------------------------------------------
 $code = Run (Join-Path $kit 'Optimize-Windows.ps1') @('-Undo', '-NoPrompt')
