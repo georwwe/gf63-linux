@@ -126,9 +126,11 @@ if ($chosen.ImageName -notmatch 'LTSC') {
     Write-Warning 'Это не LTSC-редакция. Набор рассчитан на Windows 10 Enterprise LTSC 2021, на других возможны отличия.'
 }
 $detail = Get-WindowsImage -ImagePath $wim -Index $Index
-Write-Host "Версия: $($detail.Version), архитектура: $($detail.Architecture)"
-if ("$($detail.Version)" -notmatch '^10\.0\.19044') {
-    Write-Warning 'Это не сборка 19044 (LTSC 2021). Скрипт продолжит работу, но рассчитан на LTSC 2021.'
+Write-Host "Версия: $($detail.Version)"
+if ($detail.Architecture -ne 9) { throw 'Нужен 64-разрядный (x64) образ Windows.' }
+# Образ LTSC 2021 (сборка 19044) в своих метаданных записан как 10.0.19041
+if ("$($detail.Version)" -notmatch '^10\.0\.1904[1-5]\.') {
+    Write-Warning 'Это не образ LTSC 2021. Скрипт продолжит работу, но рассчитан на LTSC 2021.'
 }
 
 # ---------- Встраивание драйверов и набора ----------
