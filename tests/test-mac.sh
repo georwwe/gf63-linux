@@ -40,7 +40,7 @@ ls -lh "$USB/sources/" | grep -i 'install'
 LIST="$(wimlib-imagex dir "$USB/sources/install.swm" 1 --ref="$USB/sources/install*.swm")"
 check 'Kit inside image'            "echo \"\$LIST\" | grep -q '^/GF63/Optimize-Windows.ps1'"
 check 'Slim marker inside image'    "echo \"\$LIST\" | grep -q '^/GF63/slim-pending'"
-check 'Drivers inside image'        "echo \"\$LIST\" | grep -q '^/GF63/drivers/wifi/test.inf'"
+check 'Drivers inside image'        "echo \"\$LIST\" | grep -q '^/GF63/drivers/drivers/wifi/test.inf'"
 check 'SetupComplete inside image'  "echo \"\$LIST\" | grep -qi '^/Windows/Setup/Scripts/SetupComplete.cmd'"
 wimlib-imagex extract "$USB/sources/install.swm" 1 /Windows/Setup/Scripts/SetupComplete.cmd \
     --ref="$USB/sources/install*.swm" --dest-dir="$TMP/out" >/dev/null

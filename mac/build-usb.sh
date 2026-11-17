@@ -12,8 +12,9 @@ KIT="$ROOT/kit"
 
 step() { printf '\n=== %s\n' "$1"; }
 fail() { printf '\nОШИБКА: %s\n' "$1" >&2; exit 1; }
-# Путь, перетащенный в Терминал: убираем кавычки и экранирование пробелов
-clean_path() { local p="$1"; p="${p%\'}"; p="${p#\'}"; p="${p//\\ / }"; p="${p%/}"; printf '%s' "$p"; }
+# Строка с путями, перетащенными в Терминал (один или несколько; пробелы и скобки
+# там экранированы обратной чертой): выдаёт по одному чистому пути на строку
+split_paths() { printf '%s\n' "$1" | xargs -n 1 printf '%s\n' | sed 's:/*$::'; }
 
 [ "$(uname)" = "Darwin" ] || fail "Этот скрипт работает только на macOS."
 [ -f "$KIT/Optimize-Windows.ps1" ] || fail "Не найдена папка kit рядом со скриптом. Распакуйте архив целиком."
@@ -40,21 +41,36 @@ if [ -z "$ISO" ]; then
     printf '\nПеретащите сюда ISO-файл Windows 10 Enterprise LTSC 2021 и нажмите Enter:\n> '
     read -r ISO
 fi
-ISO="$(clean_path "$ISO")"
+ISO="$(split_paths "$ISO" | head -1)"
 [ -f "$ISO" ] || fail "ISO-файл не найден: $ISO"
 
 # ---------- Драйверы (необязательно) ----------
-if [ -z "$DRIVERS" ] && [ -d "$ROOT/drivers" ]; then DRIVERS="$ROOT/drivers"; fi
-if [ -z "$DRIVERS" ] && [ -t 0 ]; then
-    printf '\nПеретащите сюда папку с распакованными драйверами с сайта MSI\n(или просто нажмите Enter, чтобы собрать без драйверов):\n> '
-    read -r DRIVERS
-fi
-DRIVERS="$(clean_path "$DRIVERS")"
+DRIVER_DIRS=()
 if [ -n "$DRIVERS" ]; then
-    [ -d "$DRIVERS" ] || fail "Папка с драйверами не найдена: $DRIVERS"
-    INF_COUNT="$(find "$DRIVERS" -iname '*.inf' | wc -l | tr -d ' ')"
-    [ "$INF_COUNT" -gt 0 ] || fail "В папке $DRIVERS нет файлов .inf. Архивы драйверов нужно распаковать."
-    echo "Драйверы: $DRIVERS (файлов .inf: $INF_COUNT)"
+    DRIVER_DIRS=("${DRIVERS%/}")
+elif [ -d "$ROOT/drivers" ]; then
+    DRIVER_DIRS=("$ROOT/drivers")
+elif [ -t 0 ]; then
+    printf '\nПеретащите сюда папку (или несколько папок) с распакованными драйверами с сайта MSI\n(или просто нажмите Enter, чтобы собрать без драйверов):\n> '
+    read -r DRIVERS
+    if [ -n "$DRIVERS" ]; then
+        while IFS= read -r line; do if [ -n "$line" ]; then DRIVER_DIRS+=("$line"); fi; done <<LIST
+$(split_paths "$DRIVERS")
+LIST
+    fi
+fi
+if [ "${#DRIVER_DIRS[@]}" -gt 0 ]; then
+    INF_COUNT=0
+    for d in "${DRIVER_DIRS[@]}"; do
+        [ -d "$d" ] || fail "Папка с драйверами не найдена: $d"
+        n="$(find "$d" -iname '*.inf' | wc -l | tr -d ' ')"
+        echo "Драйверы: $d (файлов .inf: $n)"
+        INF_COUNT=$((INF_COUNT + n))
+    done
+    if [ "$INF_COUNT" -eq 0 ]; then
+        echo "ВНИМАНИЕ: в этих папках нет файлов .inf - это установщики .exe."
+        echo "Они будут скопированы в C:\\GF63\\drivers, и после установки Windows их нужно запустить вручную."
+    fi
 else
     echo "Сборка без драйверов: Windows поставит их сама через Центр обновления после подключения к интернету."
 fi
@@ -131,7 +147,10 @@ cp "$HERE/SetupComplete.cmd" "$WORK/SetupComplete.cmd"
 : > "$STAGE/slim-pending"
 # Командные файлы Windows должны иметь окончания строк CRLF
 for f in "$STAGE"/*.cmd "$WORK/SetupComplete.cmd"; do perl -pi -e 's/\r?\n/\r\n/' "$f"; done
-if [ -n "$DRIVERS" ]; then cp -R "$DRIVERS" "$STAGE/drivers"; fi
+if [ "${#DRIVER_DIRS[@]}" -gt 0 ]; then
+    mkdir "$STAGE/drivers"
+    for d in "${DRIVER_DIRS[@]}"; do cp -R "$d" "$STAGE/drivers/$(basename "$d")"; done
+fi
 find "$STAGE" -name '.DS_Store' -delete
 
 cat > "$WORK/update.txt" <<CMDS
