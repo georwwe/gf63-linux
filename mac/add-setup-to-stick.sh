@@ -10,8 +10,19 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(dirname "$HERE")"
 fail() { printf '\nОШИБКА: %s\n' "$1" >&2; exit 1; }
 
-STICK="${1:-${GF63_STICK:-/Volumes/GF63WIN}}"
-[ -d "$STICK" ] || fail "Флешка не найдена ($STICK). Вставьте флешку GF63WIN в Mac и запустите снова."
+STICK="${1:-${GF63_STICK:-}}"
+if [ -z "$STICK" ]; then
+    # Флешка может называться не GF63WIN (например "GF63WIN 1") - ищем том с установщиком Windows
+    for v in /Volumes/*; do
+        if [ -f "$v/sources/boot.wim" ]; then STICK="$v"; break; fi
+    done
+fi
+if [ -z "$STICK" ] || [ ! -d "$STICK" ]; then
+    echo
+    echo "Подключённые диски:"
+    ls /Volumes
+    fail "Флешка с установщиком Windows не найдена. Вставьте её в Mac и запустите снова. Если она в списке выше под другим именем, добавьте в конец команды путь в кавычках, например: \"/Volumes/USB\""
+fi
 [ -w "$STICK" ] || fail "На флешку $STICK нельзя записать."
 [ -f "$ROOT/kit/Install-All.ps1" ] || fail "Не найдена папка kit рядом со скриптом."
 
