@@ -92,6 +92,18 @@ $code = Run (Join-Path $kit 'Setup-Minecraft.ps1') @()
 Check 'Setup-Minecraft exit code' ($code -eq 0) "code=$code"
 Check 'GPU preference written' ((Read-Reg 'HKCU:\SOFTWARE\Microsoft\DirectX\UserGpuPreferences' $fakeJava) -eq 'GpuPreference=2;')
 
+# --- 5a. Horizon setup: shader packs are really downloaded and hash-checked ---
+$horizonDir = Join-Path $env:RUNNER_TEMP 'horizon-game'
+New-Item $horizonDir -ItemType Directory -Force | Out-Null
+$code = Run (Join-Path $kit 'Setup-Horizon.ps1') @('-GameDir', $horizonDir, '-NoPrompt')
+Check 'Setup-Horizon exit code' ($code -eq 0) "code=$code"
+$zips = @(Get-ChildItem (Join-Path $horizonDir 'shaderpacks') -File -ErrorAction SilentlyContinue)
+$zips | ForEach-Object { Write-Host ("  {0}  {1:N0} KB" -f $_.Name, ($_.Length / 1KB)) }
+Check 'All four shader packs downloaded' ($zips.Count -eq 4) "count=$($zips.Count)"
+foreach ($word in 'Complementary', 'Mellow', 'MakeUp') {
+    Check "Pack present: $word" ([bool]($zips | Where-Object Name -match $word))
+}
+
 # --- 5b. SetupComplete (first-boot script used by the macOS build) -----------
 New-Item 'C:\GF63' -ItemType Directory -Force | Out-Null
 & cmd.exe /c (Join-Path $root 'mac\SetupComplete.cmd')
