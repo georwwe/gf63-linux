@@ -1,0 +1,60 @@
+#!/bin/bash
+# End-to-end test of mac/build-usb.sh on a macOS runner: official ISO in, FAT32 disk image out.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+TMP="${RUNNER_TEMP:-/tmp}/gf63"
+mkdir -p "$TMP"
+sw_vers
+brew install wimlib
+
+echo "Downloading ISO..."
+curl -L --fail --retry 3 -sS -o "$TMP/ltsc.iso" \
+  'https://go.microsoft.com/fwlink/p/?LinkID=2195404&clcid=0x409&culture=en-us&country=US'
+ls -lh "$TMP/ltsc.iso"
+
+# A fake driver package, to exercise the drivers path
+mkdir -p "$TMP/drivers/wifi"
+printf '[Version]\r\nSignature="$Windows NT$"\r\n' > "$TMP/drivers/wifi/test.inf"
+
+# A blank disk image that stands in for the USB stick
+hdiutil create -size 12g -type UDIF -layout NONE "$TMP/usb.dmg" >/dev/null
+DISK="$(hdiutil attach "$TMP/usb.dmg" -nomount | awk 'NR==1 {print $1}')"
+DISK="${DISK#/dev/}"
+echo "Fake USB: $DISK"
+
+GF63_ALLOW_ANY_DISK=1 GF63_NO_PROMPT=1 bash "$ROOT/mac/build-usb.sh" "$TMP/ltsc.iso" "$DISK" "$TMP/drivers"
+
+# The script ejects the disk; attach the image again and look inside
+DEV="$(hdiutil attach "$TMP/usb.dmg" -nomount | awk 'NR==1 {print $1}')"
+USB="$TMP/usbmnt"
+mkdir -p "$USB"
+sudo mount_msdos -u "$(id -u)" -g "$(id -g)" "${DEV}s1" "$USB"
+fail=0
+check() { if eval "$2"; then echo "PASS  $1"; else echo "FAIL  $1"; fail=1; fi; }
+diskutil info "${DEV}s1" | grep -E 'File System Personality|Partition Type' || true
+check 'Volume is FAT32'        "diskutil info '${DEV}s1' | grep -q 'MS-DOS FAT32'"
+check 'UEFI loader present'    "[ -f '$USB/efi/boot/bootx64.efi' ]"
+check 'boot.wim present'       "[ -f '$USB/sources/boot.wim' ]"
+check 'setup.exe present'      "[ -f '$USB/setup.exe' ]"
+check 'install.swm present'    "[ -f '$USB/sources/install.swm' ]"
+check 'No file over 4 GB'      "[ -z \"\$(find '$USB' -type f -size +4095M)\" ]"
+ls -lh "$USB/sources/" | grep -i 'install'
+# Listing goes to a file: piping it into "grep -q" trips pipefail when grep exits early
+wimlib-imagex dir "$USB/sources/install.swm" 1 --ref="$USB/sources/install*.swm" > "$TMP/list.txt"
+check 'Kit inside image'            "grep -q '^/GF63/Optimize-Windows.ps1' '$TMP/list.txt'"
+check 'Slim marker inside image'    "grep -q '^/GF63/slim-pending' '$TMP/list.txt'"
+check 'Drivers inside image'        "grep -q '^/GF63/drivers/drivers/wifi/test.inf' '$TMP/list.txt'"
+check 'SetupComplete inside image'  "grep -qi '^/Windows/Setup/Scripts/SetupComplete.cmd' '$TMP/list.txt'"
+wimlib-imagex extract "$USB/sources/install.swm" 1 /Windows/Setup/Scripts/SetupComplete.cmd \
+    --ref="$USB/sources/install*.swm" --dest-dir="$TMP/out" >/dev/null
+check 'SetupComplete has CRLF'      "grep -q \$'\\r' '$TMP/out/SetupComplete.cmd'"
+# --- add-setup-to-stick.sh: the one-command "put everything on the stick" step ---
+mkdir -p "$TMP/dl"
+printf 'MZfake' > "$TMP/dl/621.24-desktop-win10-win11-64bit-international-dch-whql.exe"
+GF63_DOWNLOADS="$TMP/dl" GF63_NO_EJECT=1 bash "$ROOT/mac/add-setup-to-stick.sh" "$USB"
+check 'START.cmd on stick'          "[ -f '$USB/START.cmd' ]"
+check 'START.cmd has CRLF'          "grep -q \$'\\r' '$USB/START.cmd'"
+check 'Install-All on stick'        "[ -f '$USB/GF63-SETUP/Install-All.ps1' ]"
+check 'NVIDIA driver on stick'      "[ -f '$USB/621.24-desktop-win10-win11-64bit-international-dch-whql.exe' ]"
+check 'Windows installer untouched' "[ -f '$USB/sources/boot.wim' ]"
+[ "$fail" = 0 ] && echo 'All checks passed' || { echo 'Some checks FAILED'; exit 1; }

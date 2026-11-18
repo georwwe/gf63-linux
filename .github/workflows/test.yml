@@ -1,0 +1,41 @@
+name: Test kit
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scripts:
+    name: Scripts on real Windows
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax, optimize, undo, check
+        shell: powershell
+        env:
+          # Shared runner addresses hit GitHub's anonymous API limit; a real laptop does not
+          GITHUB_TOKEN: ${{ github.token }}
+        run: .\tests\Test-Kit.ps1
+
+  build:
+    name: Build USB end to end
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image onto a virtual disk
+        shell: powershell
+        run: .\tests\Test-Build.ps1
+
+  mac:
+    name: Build USB on macOS
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build onto a disk image
+        run: bash tests/test-mac.sh
