@@ -44,7 +44,10 @@ $watch = @(
     @('HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games', 'Scheduling Category', 'High'),
     @('HKCU:\Control Panel\Desktop', 'UserPreferencesMask', '144,18,3,128,16,0,0,0'),
     @('HKCU:\Control Panel\Desktop', 'MenuShowDelay', '0'),
-    @('HKLM:\SOFTWARE\Policies\Microsoft\Edge', 'StartupBoostEnabled', '0')
+    @('HKLM:\SOFTWARE\Policies\Microsoft\Edge', 'StartupBoostEnabled', '0'),
+    @('HKCU:\Control Panel\Mouse', 'MouseSpeed', '0'),
+    @('HKCU:\System\GameConfigStore', 'GameDVR_FSEBehaviorMode', '2'),
+    @('HKCU:\SOFTWARE\Microsoft\DirectX\UserGpuPreferences', 'DirectXUserGlobalSettings', 'SwapEffectUpgradeEnable=1;')
 )
 $svcNames = 'DiagTrack', 'SysMain', 'WSearch', 'MapsBroker', 'WerSvc'
 $before = @{}
@@ -68,6 +71,13 @@ $backupFile = Join-Path $kit 'backup.json'
 Check 'backup.json created' (Test-Path $backupFile)
 $backupText = Get-Content $backupFile -Raw
 Check 'Power scheme active' (((powercfg /getactivescheme) -join ' ') -match 'GF63 Max Performance|8c5e7fda')
+# Informational: what the game power scheme holds now (a VM may not offer every setting)
+$activeScheme = ((powercfg /getactivescheme) -join ' ') -replace '.*GUID: ([0-9a-f-]{36}).*', '$1'
+foreach ($q in @(@('SUB_PROCESSOR', 'PROCTHROTTLEMIN'), @('SUB_PROCESSOR', 'CPMINCORES'), @('SUB_PROCESSOR', 'SYSCOOLPOL'), @('SUB_PCIEXPRESS', 'ASPM'), @('2a737441-1930-4402-8d77-b2bebba308a3', '48e6b7a6-50f5-4782-a5d4-53bb8f07e226'))) {
+    $out = (powercfg /query $activeScheme $q[0] $q[1] 2>&1) -join ' '
+    $ac = if ($out -match 'Current AC Power Setting Index: (0x[0-9a-f]+)') { $Matches[1] } else { 'n/a' }
+    Write-Host ("  power {0}/{1}: AC={2}" -f $q[0], $q[1], $ac)
+}
 
 # --- 3. Second run must not overwrite the backup ---------------------------
 $code = Run (Join-Path $kit 'Optimize-Windows.ps1') @('-NoPrompt', '-NoRestorePoint', '-Extreme')
@@ -127,6 +137,16 @@ Check 'Shader pack picked' ([bool]($gfx | Where-Object { $_ -match '^pickedShade
 $bytes = [IO.File]::ReadAllBytes((Join-Path $game 'horizon-graphics.txt'))
 Check 'Settings file has no BOM' ($bytes[0] -ne 0xEF)
 Check 'Watcher removed itself' ((Read-Reg $runKey 'GF63Horizon') -eq '<none>')
+
+# --- 5a3. Add-Game: any game exe is pinned to the discrete GPU ---------------
+$gameDir = Join-Path $env:RUNNER_TEMP 'fakegame'
+New-Item $gameDir -ItemType Directory -Force | Out-Null
+Set-Content (Join-Path $gameDir 'game.exe') 'x'
+Set-Content (Join-Path $gameDir 'unins000.exe') 'x'
+$code = Run (Join-Path $kit 'Add-Game.ps1') @($gameDir)
+Check 'Add-Game exit code' ($code -eq 0) "code=$code"
+Check 'Game pinned to NVIDIA' ((Read-Reg 'HKCU:\SOFTWARE\Microsoft\DirectX\UserGpuPreferences' (Join-Path $gameDir 'game.exe')) -eq 'GpuPreference=2;')
+Check 'Uninstaller skipped' ((Read-Reg 'HKCU:\SOFTWARE\Microsoft\DirectX\UserGpuPreferences' (Join-Path $gameDir 'unins000.exe')) -eq '<none>')
 
 # --- 5b. SetupComplete (first-boot script used by the macOS build) -----------
 New-Item 'C:\GF63' -ItemType Directory -Force | Out-Null

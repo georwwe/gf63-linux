@@ -222,6 +222,27 @@ powercfg /change standby-timeout-ac 0  | Out-Null
 # Гибернация и быстрый запуск: освобождает несколько ГБ на SSD и убирает баги после "выключения"
 powercfg /hibernate off | Out-Null
 Set-Reg 'HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling' 'PowerThrottlingOff' 1
+
+# Параметры игровой схемы "от сети". Меняется только копия "GF63 Max Performance", встроенные схемы не трогаются.
+# Каждая строка независима: если процессор или система такого параметра не знают, он пропускается.
+function Set-AcPower([string]$name, [string]$sub, [string]$setting, [int]$value) {
+    if ($scheme -eq $high) { return }   # запасная встроенная схема не изменяется
+    $saved = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'   # Windows PowerShell 5.1 иначе считает любой вывод в stderr ошибкой
+    try { $null = powercfg /setacvalueindex $scheme $sub $setting $value 2>&1 } catch { $global:LASTEXITCODE = 1 }
+    $ErrorActionPreference = $saved
+    if ($LASTEXITCODE -eq 0) { Write-Host "  $name" } else { Write-Host "  (пропущено: $name)" }
+}
+$SUB_PROC = '54533251-82be-4824-96c1-47b60b740d00'
+Set-AcPower 'процессор: минимум 100% (без снижения частоты)'     $SUB_PROC '893dee8e-2bef-41e0-89c6-b55d0929964c' 100
+Set-AcPower 'процессор: все ядра всегда активны'                 $SUB_PROC '0cc5b647-c1df-4637-891a-dec35c318583' 100
+Set-AcPower 'процессор: агрессивный турбо-режим'                 $SUB_PROC 'be337238-0d82-4146-a960-4f3749d470c7' 2
+Set-AcPower 'охлаждение: активное (вентилятор раньше сбрасывает частоту)' $SUB_PROC '94d3a615-a899-4ac5-ae2b-e4d8f634367f' 1
+Set-AcPower 'PCI Express: энергосбережение линии выключено'      '501a4d13-42af-4429-9fd1-a8218c268e20' 'ee12f906-d277-404b-b6da-e5fa1a576df5' 0
+Set-AcPower 'USB: выборочное отключение выключено'               '2a737441-1930-4402-8d77-b2bebba308a3' '48e6b7a6-50f5-4782-a5d4-53bb8f07e226' 0
+Set-AcPower 'Wi-Fi: максимальная производительность'              '19cbb8fa-5279-450e-9fac-8a3d5fedd0c1' '12bbebe6-58d6-4636-95bb-3217ef867c1a' 0
+powercfg /change disk-timeout-ac 0 | Out-Null
+powercfg /setactive $scheme | Out-Null   # применить изменения
 Write-Host "  активная схема: $scheme"
 
 # ---------- Игры и видеокарта ----------
@@ -241,6 +262,16 @@ Set-Reg "$mm\Tasks\Games" 'GPU Priority' 8
 Set-Reg "$mm\Tasks\Games" 'Priority' 6
 Set-Reg "$mm\Tasks\Games" 'Scheduling Category' 'High' 'String'
 Set-Reg "$mm\Tasks\Games" 'SFIO Priority' 'High' 'String'
+# Оконные и безрамочные игры идут через быстрый режим вывода (меньше задержка, выше FPS)
+Set-Reg 'HKCU:\SOFTWARE\Microsoft\DirectX\UserGpuPreferences' 'DirectXUserGlobalSettings' 'SwapEffectUpgradeEnable=1;' 'String'
+# Полноэкранный режим без оптимизаций Windows (игра получает экран напрямую)
+Set-Reg 'HKCU:\System\GameConfigStore' 'GameDVR_FSEBehaviorMode' 2
+Set-Reg 'HKCU:\System\GameConfigStore' 'GameDVR_HonorUserFSEBehaviorMode' 1
+Set-Reg 'HKCU:\System\GameConfigStore' 'GameDVR_DXGIHonorFSEWindowsCompatible' 1
+# Мышь без ускорения: прицел двигается ровно на столько, на сколько вы двигаете мышь (после перезахода в систему)
+Set-Reg 'HKCU:\Control Panel\Mouse' 'MouseSpeed' '0' 'String'
+Set-Reg 'HKCU:\Control Panel\Mouse' 'MouseThreshold1' '0' 'String'
+Set-Reg 'HKCU:\Control Panel\Mouse' 'MouseThreshold2' '0' 'String'
 
 # ---------- Телеметрия и фон ----------
 Step 'Телеметрия и фоновая активность'

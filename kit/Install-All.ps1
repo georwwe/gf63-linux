@@ -140,6 +140,11 @@ Step 'Видеокарта для Minecraft Java'
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Target 'Setup-Minecraft.ps1') *> $null
 Write-Host '  привязка к NVIDIA применится автоматически после первого запуска игры'
 
+# ---------- 6b. Оптимизация Windows под игры ----------
+Step 'Оптимизация Windows под игры'
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Target 'Optimize-Windows.ps1') -NoPrompt -NoRestorePoint | Out-Host
+if ($LASTEXITCODE -eq 0) { Ok 'применена (откат: C:\GF63\Undo.cmd)' } else { Bad "оптимизация завершилась с кодом $LASTEXITCODE (журнал: C:\GF63\optimize.log)" }
+
 # ---------- 7. Фоновая донастройка Horizon ----------
 Step 'Донастройка Horizon'
 $watch = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Target\Horizon-Watch.ps1`""
@@ -154,6 +159,7 @@ Ok 'шейдеры и настройки встанут сами после пе
 # ---------- Итог ----------
 Write-Host ''
 Write-Host 'УСТАНОВКА ЗАВЕРШЕНА.' -ForegroundColor Green
+Write-Host 'Чтобы часть настроек (мышь, схема питания) вступила в силу полностью, перезагрузите ноутбук.'
 Write-Host ''
 Write-Host 'Осталось то, что может сделать только владелец аккаунта:'
 Write-Host '  1. Откройте Minecraft Launcher, войдите в свой аккаунт Microsoft (с купленной Java Edition),'
